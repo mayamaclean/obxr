@@ -36,17 +36,17 @@ fn set_secret(output: &str, hmac: &[u8], salt: &[u8]) {
     out.write(&hmac[..]).expect("io err"); out.write(&salt[..]).expect("io err");
 }
 
-fn do_box(input: &str, threads: usize, max_mem: usize, max_argon: usize) {
+fn do_box(input: &str, threads: usize, max_mem: usize, max_targon: usize, max_margon: usize) {
     let output       = format!("{}.{}", input.split_at(input.rfind('.').unwrap()).0, "bin");
     let mut password = PasswordInput::new("Password").confirm("Confirm", "Mismatch").interact().expect("no password");
     let salt         = randombytes::randombytes(16);
 
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(ProgressStyle::default_spinner().template("{msg} {spinner}").tick_chars("☆ﾟ.*･｡ﾟ★"));
-    spinner.enable_steady_tick(50);
+    spinner.enable_steady_tick(100);
 
     spinner.set_message("Checking password... ");
-    let secret = util::secrets_from_argon(password.as_bytes(), &salt, &[], threads, max_argon).expect("argon err");
+    let secret = util::secrets_from_argon(password.as_bytes(), &salt, &[], max_targon, max_margon).expect("argon err");
     memzero(unsafe { password.as_bytes_mut() } );
     spinner.set_message("Encrypting...");
 
@@ -66,16 +66,16 @@ fn get_secret(input: &str) -> Vec<u8> {
     b.to_vec()
 }
 
-fn do_unbox(input: &str, threads: usize, max_mem: usize, max_argon: usize) {
+fn do_unbox(input: &str, threads: usize, max_mem: usize, max_targon: usize, max_margon: usize) {
     let data         = get_secret(input);
     let mut password = PasswordInput::new("Password").confirm("Confirm", "Mismatch").interact().expect("no password");
 
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(ProgressStyle::default_spinner().template("{msg} {spinner}").tick_chars("☆ﾟ.*･｡ﾟ★"));
-    spinner.enable_steady_tick(50);
+    spinner.enable_steady_tick(100);
 
     spinner.set_message("Checking password... ");
-    let secret = util::secrets_from_argon(password.as_bytes(), &data[64..], &[], threads, max_argon).expect("argon err");
+    let secret = util::secrets_from_argon(password.as_bytes(), &data[64..], &[], max_targon, max_margon).expect("argon err");
     memzero(unsafe { password.as_bytes_mut() } );
     spinner.set_message("Authenticating and decrypting... ");
     let output = format!("{}.{}", input.split_at(input.rfind('.').unwrap()).0, "out");
@@ -88,12 +88,13 @@ fn do_unbox(input: &str, threads: usize, max_mem: usize, max_argon: usize) {
 
 fn main() {
     let config = clap_app!(obxr =>
-                            (version: "0.1.0")
+                            (version: "0.1.1")
                             (author: "Maya MacLean <https://github.com/mayamaclean>")
-                            (about: "\nplease note that thread and memory settings may affect authentication")
+                            (about: "\nplease note that buffer and key derivation settings may affect authentication")
                             (@arg THREADS: -t --threads +takes_value "sets maximum worker threads (default: 4)")
                             (@arg MEMORY: -m --memory +takes_value "sets maximum buffer size in kb (default: 16 mb)")
-                            (@arg ARGON: -a --argon +takes_value "sets memory usage for key derivation")
+                            (@arg MARGON: -r --margon +takes_value "sets memory usage for key derivation in mb (min 128 mb)")
+                            (@arg TARGON: -n --targon +takes_value "sets lane usage for key derivation")
                             (@subcommand box =>
                                 (about: "encrypts and tags")
                                 (@arg INPUT: +required "no input!")
@@ -108,14 +109,15 @@ fn main() {
 
     let max_mem = config.value_of("MEMORY").unwrap_or("16384");
 
-    let max_argon = config.value_of("ARGON").unwrap_or("131072");
+    let max_targon = config.value_of("TARGON").unwrap_or("4");
+    let max_margon = config.value_of("MARGON").unwrap_or("128");
 
     rust_sodium::init().expect("sodium error");
 
     if let Some(sub) = config.subcommand_matches("box") {
-        do_box(sub.value_of("INPUT").unwrap(), max_threads.parse::<usize>().unwrap(), max_mem.parse::<usize>().unwrap()*1024, max_argon.parse::<usize>().unwrap());
+        do_box(sub.value_of("INPUT").unwrap(), max_threads.parse::<usize>().unwrap(), max_mem.parse::<usize>().unwrap()*1024, max_targon.parse::<usize>().unwrap(), max_margon.parse::<usize>().unwrap()*1024);
     } else if let Some(sub) = config.subcommand_matches("unbox") {
-        do_unbox(sub.value_of("INPUT").unwrap(), max_threads.parse::<usize>().unwrap(), max_mem.parse::<usize>().unwrap()*1024, max_argon.parse::<usize>().unwrap());
+        do_unbox(sub.value_of("INPUT").unwrap(), max_threads.parse::<usize>().unwrap(), max_mem.parse::<usize>().unwrap()*1024, max_targon.parse::<usize>().unwrap(), max_margon.parse::<usize>().unwrap()*1024);
     } else {
         println!("no command!");
     }
